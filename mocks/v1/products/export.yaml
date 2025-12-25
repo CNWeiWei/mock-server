@@ -1,0 +1,11 @@
+id: "prod_export_pdf"
+request:
+  method: "GET"
+  path: "/api/v1/products/report"
+response:
+  status: 200
+  headers:
+    Content-Type: "application/pdf"
+    Content-Disposition: "attachment; filename=report.pdf"
+  # 智能协议：引擎会自动识别前缀并异步读取磁盘文件
+  body: "file://./storage/reports/annual_2024.pdf"

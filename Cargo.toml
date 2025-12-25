@@ -1,5 +1,5 @@
 [package]
-name = "mock-server"
+name = "mock_server"
 version = "0.1.0"
 edition = "2024"
 
@@ -18,7 +18,7 @@ serde_yaml = "0.9.34+deprecated"
 serde_json = "1.0.147"
 
 # 物理目录递归扫描工具
-#walkdir = "2.5.0"
+walkdir = "2.5.0"
 
 # 性能优化：快速哈希（可选，用于路由匹配）
 #dashmap = "7.0.0-rc2"
@@ -26,3 +26,6 @@ serde_json = "1.0.147"
 #notify = "8.2.0"
 # 路径处理
 #pathdiff = "0.2.3"
+
+[dev-dependencies]
+tempfile = "3.24.0"

@@ -1,0 +1,11 @@
+id: "user_search_admin"
+request:
+  method: "GET"
+  path: "/api/v1/users"
+  # 请求中必须包含 role=admin 且 status=active
+  query_params:
+    role: "admin"
+    status: "active"
+response:
+  status: 200
+  body: '{"users": [{"id": 1, "name": "SuperAdmin"}]}'

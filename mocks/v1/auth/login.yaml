@@ -1,0 +1,21 @@
+id: "auth_login_001"
+request:
+  method: "POST"
+  path: "/api/v1/auth/login"
+  # 必须包含此 Header 才会匹配
+  headers:
+    Content-Type: "application/json"
+response:
+  status: 200
+  headers:
+    Content-Type: "application/json"
+    X-Mock-Engine: "Rust-Gemini-v1.2"
+  # 直接内联 JSON 字符串
+  body: >
+    {
+      "code": 0,
+      "data": { "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6" },
+      "msg": "success"
+    }
+settings:
+  delay_ms: 200 # 模拟真实网络延迟

@@ -1,0 +1,16 @@
+# 使用 YAML 数组语法定义多个规则
+- id: "sys_ping"
+  request:
+    method: "GET"
+    path: "/api/v1/ping"
+  response:
+    status: 200
+    body: "pong"
+
+- id: "sys_version"
+  request:
+    method: "GET"
+    path: "/api/v1/version"
+  response:
+    status: 200
+    body: '{"version": "1.2.0-smart"}'
