@@ -1,0 +1,14 @@
+/target
+
+# IDE/编辑器配置
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+.env
+.env.local
+
+# 日志文件
+logs/
+*.log
