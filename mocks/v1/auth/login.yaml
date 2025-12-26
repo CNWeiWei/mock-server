@@ -5,6 +5,8 @@ request:
   # 必须包含此 Header 才会匹配
   headers:
     Content-Type: "application/json"
+    Authorization: "111"
+    host: "127.0.0.1:8080"
 response:
   status: 200
   headers:

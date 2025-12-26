@@ -20,6 +20,9 @@ serde_json = "1.0.147"
 # 物理目录递归扫描工具
 walkdir = "2.5.0"
 
+tracing="0.1.44"
+tracing-subscriber = "0.3.22"
+
 # 性能优化：快速哈希（可选，用于路由匹配）
 #dashmap = "7.0.0-rc2"
 # 热加载支持（扩展功能）
