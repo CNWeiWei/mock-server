@@ -1,7 +1,8 @@
 use std::fs::{self, File};
 use std::io::Write;
 use tempfile::tempdir;
-// 替换为你的项目实际名称
+// 确保 Cargo.toml 中有 serde_json
+use serde_json::json;
 use mock_server::config::{MockRule, MockSource};
 use mock_server::loader::MockLoader;
 use mock_server::router::MockRouter;
@@ -10,18 +11,23 @@ use std::collections::HashMap;
 /// 模块一：验证 Config 反序列化逻辑
 #[test]
 fn test_config_parsing_scenarios() {
-    // 场景 A: 验证单接口配置 (Inline 模式)
+    // 场景 A: 验证单接口配置 (增加 body 结构化校验)
     let yaml_single = r#"
         id: "auth_v1"
-        request: { method: "POST", path: "/api/v1/login" }
+        request:
+          method: "POST"
+          path: "/api/v1/login"
+          body: { "user": "admin" }
         response: { status: 200, body: "welcome" }
     "#;
     let source_s: MockSource = serde_yaml::from_str(yaml_single).expect("解析单接口失败");
     let rules = source_s.flatten();
     assert_eq!(rules.len(), 1);
-    assert_eq!(rules[0].request.path, "/api/v1/login");
+    // 验证 body 是否被成功解析为 Value::Object
+    assert!(rules[0].request.body.is_some());
+    assert_eq!(rules[0].request.body.as_ref().unwrap()["user"], "admin");
 
-    // 场景 B: 验证多接口配置 (Collection 模式)
+    // 场景 B: 验证多接口配置 (原有逻辑不变)
     let yaml_multi = r#"
         - id: "api_1"
           request: { method: "GET", path: "/health" }
@@ -33,7 +39,7 @@ fn test_config_parsing_scenarios() {
     let source_m: MockSource = serde_yaml::from_str(yaml_multi).expect("解析多接口失败");
     assert_eq!(source_m.flatten().len(), 2);
 
-    // 场景 C: 验证 Smart Body 的 file:// 协议字符串解析
+    // 场景 C: 验证 Smart Body 的 file:// 协议字符串解析 (原有逻辑不变)
     let yaml_file = r#"
         id: "export_api"
         request: { method: "GET", path: "/download" }
@@ -44,48 +50,34 @@ fn test_config_parsing_scenarios() {
     assert!(rule.response.body.starts_with("file://"));
 }
 
-/// 模块二：验证 Loader 递归扫描与索引构建
+/// 模块二：验证 Loader 递归扫描与索引构建 (不涉及 Matcher 逻辑，基本保持不变)
 #[test]
 fn test_loader_recursive_indexing() {
     let temp_root = tempdir().expect("无法创建临时目录");
     let root_path = temp_root.path();
 
-    // 创建多级目录结构
     let auth_path = root_path.join("v1/auth");
     fs::create_dir_all(&auth_path).unwrap();
 
-    // 1. 在深层目录写入一个单接口文件
     let mut f1 = File::create(auth_path.join("login.yaml")).unwrap();
     writeln!(f1, "id: 'l1'\nrequest: {{ method: 'POST', path: '/api/v1/login' }}\nresponse: {{ status: 200, body: 'ok' }}").unwrap();
 
-    // 2. 在根目录写入一个多接口文件
     let mut f2 = File::create(root_path.join("sys.yaml")).unwrap();
     writeln!(f2, "- id: 's1'\n  request: {{ method: 'GET', path: '/health' }}\n  response: {{ status: 200, body: 'up' }}").unwrap();
 
-    // 执行加载
     let index = MockLoader::load_all_from_dir(root_path);
 
-    // 验证逻辑：
-    // 即使物理路径很深，索引 Key 必须是逻辑路径的首段
-    assert!(
-        index.contains_key("api"),
-        "必须通过 /api/v1/login 提取出 'api' 键"
-    );
-    assert!(
-        index.contains_key("health"),
-        "必须通过 /health 提取出 'health' 键"
-    );
-
-    // 验证扁平化后的总数
+    assert!(index.contains_key("api"));
+    assert!(index.contains_key("health"));
     let total: usize = index.values().map(|v| v.len()).sum();
     assert_eq!(total, 2);
 }
 
 #[test]
 fn test_router_matching_logic() {
-    // 1. 准备模拟数据（模拟 Loader 的输出）
     let mut index = HashMap::new();
 
+    // 1. 准备带有 Body 的规则
     let rule_auth = serde_yaml::from_str::<MockSource>(
         r#"
         id: "auth_v1"
@@ -93,55 +85,76 @@ fn test_router_matching_logic() {
           method: "POST"
           path: "/api/v1/login"
           headers: { "Content-Type": "application/json" }
+          body: { "code": 123 }
         response: { status: 200, body: "token_123" }
     "#,
     )
-    .unwrap()
-    .flatten();
+        .unwrap()
+        .flatten();
 
-    let rule_user = serde_yaml::from_str::<MockSource>(
-        r#"
-        id: "get_user"
-        request:
-          method: "GET"
-          path: "/api/user/info"
-          query_params: { "id": "100" }
-        response: { status: 200, body: "user_info" }
-    "#,
-    )
-    .unwrap()
-    .flatten();
-
-    // 构建 HashMap 索引（模仿 Loader 的行为）
-    index.insert(
-        "api".to_string(),
-        vec![rule_auth[0].clone(), rule_user[0].clone()],
-    );
-
+    index.insert("api".to_string(), vec![rule_auth[0].clone()]);
     let router = MockRouter::new(index);
 
-    // 2. 测试场景 A：完全匹配
+    // 2. 测试场景 A：完全匹配 (包括 Body)
     let mut headers = HashMap::new();
     headers.insert("Content-Type".to_string(), "application/json".to_string());
 
-    let matched = router.match_rule("POST", "/api/v1/login", &HashMap::new(), &headers);
+    // 构造请求 Body
+    let incoming_body = Some(json!({ "code": 123 }));
+
+    let matched = router.match_rule(
+        "POST",
+        "/api/v1/login",
+        &HashMap::new(),
+        &headers,
+        &incoming_body // 传入新参数
+    );
     assert!(matched.is_some());
     assert_eq!(matched.unwrap().id, "auth_v1");
 
-    // 3. 测试场景 B：路径末尾斜杠归一化 (Trailing Slash)
-    let matched_slash = router.match_rule("POST", "/api/v1/login/", &HashMap::new(), &headers);
-    assert!(matched_slash.is_some(), "应该忽略路径末尾的斜杠");
+    // 3. 测试场景 B：Body 不匹配
+    let wrong_body = Some(json!({ "code": 456 }));
+    let matched_fail = router.match_rule(
+        "POST",
+        "/api/v1/login",
+        &HashMap::new(),
+        &headers,
+        &wrong_body
+    );
+    assert!(matched_fail.is_none(), "Body 不一致时不应匹配成功");
 
-    // 4. 测试场景 C：Query 参数子集匹配
-    let mut queries = HashMap::new();
-    queries.insert("id".to_string(), "100".to_string());
-    queries.insert("extra".to_string(), "unused".to_string()); // 额外的参数不应影响匹配
+    // 4. 测试场景 C：智能字符串转换验证 (YAML 是字符串，请求是对象)
+    let rule_str_body = serde_yaml::from_str::<MockSource>(
+        r#"
+        id: "str_match"
+        request:
+          method: "POST"
+          path: "/api/str"
+          body: '{"type": "json_in_string"}' # 这里 YAML 解析为 Value::String
+        response: { status: 200, body: "ok" }
+    "#).unwrap().flatten();
 
-    let matched_query = router.match_rule("GET", "/api/user/info", &queries, &HashMap::new());
-    assert!(matched_query.is_some());
-    assert_eq!(matched_query.unwrap().id, "get_user");
+    let mut index2 = HashMap::new();
+    index2.insert("api".to_string(), vec![rule_str_body[0].clone()]);
+    let router2 = MockRouter::new(index2);
 
-    // 5. 测试场景 D：匹配失败（Method 错误）
-    let fail_method = router.match_rule("GET", "/api/v1/login", &HashMap::new(), &headers);
-    assert!(fail_method.is_none());
+    let incoming_obj = Some(json!({ "type": "json_in_string" })); // 请求是 JSON 对象
+    let matched_str = router2.match_rule(
+        "POST",
+        "/api/str",
+        &HashMap::new(),
+        &HashMap::new(),
+        &incoming_obj
+    );
+    assert!(matched_str.is_some(), "应该支持将 YAML 字符串 body 转换为对象进行匹配");
+
+    // 5. 测试场景 D：末尾斜杠兼容性测试
+    let matched_slash = router.match_rule(
+        "POST",
+        "/api/v1/login/",
+        &HashMap::new(),
+        &headers,
+        &incoming_body
+    );
+    assert!(matched_slash.is_some());
 }

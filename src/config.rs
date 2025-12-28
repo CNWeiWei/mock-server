@@ -5,9 +5,9 @@ use std::collections::HashMap;
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum MockSource {
-    /// 对应“一接口一文件”模式
+    /// 对应“一个接口一个文件”模式
     Single(MockRule),
-    /// 对应“一文件多接口”模式
+    /// 对应“一个文件多个接口”模式
     Multiple(Vec<MockRule>),
 }
 
@@ -39,6 +39,8 @@ pub struct RequestMatcher {
     pub query_params: Option<HashMap<String, String>>,
     /// 选填：只有请求包含这些 Header 时才匹配
     pub headers: Option<HashMap<String, String>>,
+    // 修改点：从 String 改为 Option<serde_json::Value>
+    pub body: Option<serde_json::Value>,
 }
 
 /// 响应内容定义

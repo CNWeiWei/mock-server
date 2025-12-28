@@ -18,6 +18,7 @@ impl MockRouter {
         path: &str,
         queries: &HashMap<String, String>,
         headers: &HashMap<String, String>,
+        incoming_body: &Option<serde_json::Value>, // 修改 1: 增加参数
     ) -> Option<&MockRule> {
         // 1. 提取请求路径的首段作为索引 Key
         let key = self.extract_first_segment(path);
@@ -26,7 +27,7 @@ impl MockRouter {
         if let Some(rules) = self.index.get(&key) {
             // 3. 在候选集中进行线性深度匹配
             for rule in rules {
-                if self.is_match(rule, method, path, queries, headers) {
+                if self.is_match(rule, method, path, queries, headers,incoming_body) {
                     return Some(rule);
                 }
             }
@@ -43,6 +44,7 @@ impl MockRouter {
         path: &str,
         queries: &HashMap<String, String>,
         headers: &HashMap<String, String>,
+        incoming_body: &Option<serde_json::Value>, // 修改 3: 增加参数
     ) -> bool {
         // A. 基础校验：Method 和 Path 必须完全一致 (忽略末尾斜杠)
         if rule.request.method.to_uppercase() != method.to_uppercase() {
@@ -76,6 +78,27 @@ impl MockRouter {
                 if !matched {
                     return false;
                 }
+            }
+        }
+        // D. 智能 Body 全量比对逻辑
+        if let Some(ref required_val) = rule.request.body {
+            match incoming_body {
+                Some(actual_val) => {
+                    // 实现你的想法：尝试将 YAML 中的 String 转换为 Object 再对比
+                    let final_required = if let Some(s) = required_val.as_str() {
+                        // 如果能解析成 JSON，就用解析后的对象，否则用原始字符串 Value
+                        serde_json::from_str::<serde_json::Value>(s).unwrap_or_else(|_| required_val.clone())
+                    } else {
+                        required_val.clone()
+                    };
+
+                    // 执行全量相等比对
+                    if final_required != *actual_val {
+                        println!("DEBUG: [ID:{}] Body Mismatch", rule.id);
+                        return false;
+                    }
+                }
+                None => return false, // YAML 要求有 Body 但请求为空
             }
         }
 

@@ -2,6 +2,7 @@ id: "prod_export_pdf"
 request:
   method: "GET"
   path: "/api/v1/products/report"
+  body: '{"username":"user","password":"123"}'
 response:
   status: 200
   headers:

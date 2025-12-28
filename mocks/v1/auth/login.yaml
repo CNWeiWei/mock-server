@@ -7,6 +7,11 @@ request:
     Content-Type: "application/json"
     Authorization: "111"
     host: "127.0.0.1:8080"
+  body: >
+    {
+        "username":"user",
+        "password":"123"
+    }
 response:
   status: 200
   headers:
