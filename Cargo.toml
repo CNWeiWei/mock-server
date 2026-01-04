@@ -26,7 +26,8 @@ tracing-subscriber = "0.3.22"
 # 性能优化：快速哈希（可选，用于路由匹配）
 #dashmap = "7.0.0-rc2"
 # 热加载支持（扩展功能）
-#notify = "8.2.0"
+notify = "8.2.0"
+notify-debouncer-mini = "0.6.0"
 # 路径处理
 #pathdiff = "0.2.3"
 

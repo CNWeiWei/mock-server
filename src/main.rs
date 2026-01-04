@@ -1,43 +1,63 @@
 use std::net::SocketAddr;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
 use axum::{routing::any, Router};
+use notify_debouncer_mini::{new_debouncer, notify::*};
+
 use mock_server::loader::MockLoader;
 use mock_server::router::MockRouter;
 use mock_server::handler::{mock_handler, AppState};
 
 #[tokio::main]
 async fn main() {
-    // 1. 初始化日志（建议添加，方便观察加载情况）
-    // 需要在 Cargo.toml 添加 tracing-subscriber = "0.3"
     tracing_subscriber::fmt::init();
 
-    // 2. 递归加载所有的 YAML 配置文件
     let mocks_dir = Path::new("./mocks");
     if !mocks_dir.exists() {
-        println!("Warning: 'mocks/' directory not found. Creating it...");
         std::fs::create_dir_all(mocks_dir).unwrap();
     }
 
+    // 1. 初始加载
     println!("Scanning mocks directory...");
     let index = MockLoader::load_all_from_dir(mocks_dir);
-
-    // 3. 构建路由引擎并包装为共享状态
-    let router_engine = MockRouter::new(index);
     let shared_state = Arc::new(AppState {
-        router: router_engine,
+        router: RwLock::new(MockRouter::new(index)),
     });
 
-    // 4. 配置 Axum 路由
-    // 使用 any(mock_handler) 意味着它会接管所有 HTTP 方法和所有路径的请求
+    // 2. 设置热加载监听器
+    let state_for_watcher = shared_state.clone();
+    let watch_path = mocks_dir.to_path_buf();
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    // 200ms 防抖，防止编辑器保存文件时产生多次干扰
+    let mut debouncer = new_debouncer(Duration::from_millis(200), tx).unwrap();
+    debouncer.watcher().watch(&watch_path, RecursiveMode::Recursive).unwrap();
+
+    // 启动异步任务监听文件变动
+    tokio::spawn(async move {
+        while let Ok(res) = rx.recv() {
+            match res {
+                Ok(_) => {
+                    println!("🔄 Detecting changes in mocks/, reloading...");
+                    let new_index = MockLoader::load_all_from_dir(&watch_path);
+                    // 获取写锁 (Write Lock) 更新索引
+                    let mut writer = state_for_watcher.router.write().expect("Failed to acquire write lock");
+                    *writer = MockRouter::new(new_index);
+                    println!("✅ Mocks reloaded successfully.");
+                }
+                Err(e) => eprintln!("Watcher error: {:?}", e),
+            }
+        }
+    });
+
+    // 3. 配置 Axum 路由
     let app = Router::new()
         .fallback(any(mock_handler))
         .with_state(shared_state);
 
-    // 5. 启动服务
     let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
-    println!("🚀 Rust Mock Server is running on http://{}", addr);
-    println!("Ready to handle requests based on your YAML definitions.");
+    println!("🚀 Server running at http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
